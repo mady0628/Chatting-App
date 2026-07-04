@@ -21,9 +21,10 @@ export const sign_up = async (req, res) => {
         const passwordHash = bcrypt.hashSync(password, 10);
 
         const result = await pool.query('INSERT INTO users (username,email,password_hash) VALUES ($1,$2,$3) RETURNING *', [username, email, passwordHash]);
+        const { password_hash, ...userSafe } = result.rows[0];
         return res.status(201).json({
             message: "Create Success",
-            user: result.rows[0],
+            user: userSafe,
         })
     } catch (err) {
         console.error("Sign-up error:", err);
@@ -73,10 +74,12 @@ export const sign_in = async (req, res) => {
         }, process.env.JWT_SECRET, { expiresIn: '1d' }
         );
 
+        const { password_hash, ...userSafe } = user;
+
         return res.status(200).json({
             message: "Login successfully",
             token,
-            user,
+            user: userSafe,
         })
     } catch (err) {
         console.error("Sign-in error:", err);
