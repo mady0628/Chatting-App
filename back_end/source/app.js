@@ -5,7 +5,7 @@ import morgan from 'morgan'
 import pool from './db/pool.js'
 import authRouter from './router/auth.router.js'
 import usersRouter from './router/users.router.js'
-import conversationRouter from './router/conversation.controller.js'
+import conversationRouter from './router/conversation.router.js'
 
 dotenv.config()
 

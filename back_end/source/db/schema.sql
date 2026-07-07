@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS conversations(
     name VARCHAR(20),
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    avatar_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS conversation_members(

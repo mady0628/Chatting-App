@@ -33,6 +33,7 @@ export const createConversation = async (req, res) => {
             })
         }
 
+
         const result = await pool.query(
             `
             INSERT INTO conversations (type)
@@ -112,3 +113,103 @@ export const creatGroupConversation = async (req, res) => {
         }
     }
 }
+
+export const getListConversations = async (req, res) => {
+    try {
+        const userID = req.user.id;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = parseInt(req.query.offset) || 0;
+
+        const conversations = await pool.query(`
+            SELECT
+                c.id,
+                c.name AS group_name,
+                c.type,
+                c.avatar_url AS group_avatar,
+                u.username AS other_user_name,
+                u.avatar_url AS other_user_avatar,
+                (
+                    SELECT m.content
+                    FROM messages m
+                    WHERE m.conversation_id = c.id
+                    ORDER BY m.created_at DESC
+                    LIMIT 1
+                ) AS last_message,
+                (
+                    SELECT m.created_at
+                    FROM messages m
+                    WHERE m.conversation_id = c.id
+                    ORDER BY m.created_at DESC
+                    LIMIT 1
+                ) AS last_message_time
+                
+            FROM conversations c
+            JOIN conversation_members cm1 
+                ON c.id = cm1.conversation_id
+                AND cm1.user_id = $1
+            LEFT JOIN conversation_members cm 
+                ON c.id = cm.conversation_id
+                AND cm.user_id !=$1
+                AND c.type = 'direct'
+            LEFT JOIN users u
+                ON cm.user_id = u.id
+            ORDER BY c.updated_at DESC
+            LIMIT $2 OFFSET $3
+        `, [userID, limit, offset])
+        res.status(200).json({
+            message: "Get list conversation success",
+            conversations: conversations.rows,
+        })
+    } catch (err) {
+        return res.status(500).json({
+            error: err.message,
+        })
+    }
+}
+
+export const getMessages = async (req, res) => {
+    try {
+        const userID = req.user.id;
+        const { conversationID } = req.params;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = parseInt(req.query.offset) || 0;
+
+        const checkUserInConversation = await pool.query(`
+            SELECT c.id
+            FROM conversations c
+            JOIN conversation_members cm
+                ON c.id = cm.conversation_id
+                AND cm.user_id = $1
+            WHERE c.id = $2   
+        `, [userID, conversationID])
+
+        if (checkUserInConversation.rows.length == 0) {
+            return res.status(404).json({
+                message: "Conversation not found",
+            })
+        }
+
+        const messages = await pool.query(
+            `
+            SELECT
+            m.id, m.conversation_id, m.content, m.type, m.file_url, m.created_at,
+            u.username as sender_name, u.avatar_url as sender_avatar
+            FROM messages m
+            JOIN users u
+            ON u.id = m.sender_id
+            WHERE m.conversation_id = $1
+            ORDER BY m.created_at DESC
+            LIMIT $2 OFFSET $3
+            `, [conversationID, limit, offset]
+        )
+        return res.status(200).json({
+            message: "Get message succes",
+            messages: messages.rows,
+        })
+    } catch (err) {
+        return res.status(500).json({
+            error: err.message,
+        })
+    }
+}
+
