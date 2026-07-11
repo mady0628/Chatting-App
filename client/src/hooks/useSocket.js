@@ -14,8 +14,7 @@ export const useSocket = () => {
         removeOnlineUser,
         setOnlineUsers,
         setTyping,
-        conversations,
-        setConversations
+        updateLastMessage
     } = useChatStore();
 
     useEffect(() => {
@@ -48,17 +47,7 @@ export const useSocket = () => {
 
             socket.on('receive_message', (message) => {
                 addMessage(message);
-
-                setConversations(conversations.map(conv => {
-                    if (conv.id === message.conversation_id) {
-                        return {
-                            ...conv,
-                            last_message: message.content,
-                            last_message_time: message.created_at
-                        };
-                    }
-                    return conv;
-                }));
+                updateLastMessage(message);
             });
 
             socket.on('typing_start', ({ conversationID, userID, username }) => {
@@ -72,7 +61,7 @@ export const useSocket = () => {
 
         return () => {
         };
-    }, [token, isAuthenticated, conversations]);
+    }, [token, isAuthenticated]);
 
     const joinConversation = (conversationID) => {
         if (socket) {

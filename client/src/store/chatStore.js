@@ -7,16 +7,31 @@ const useChatStore = create((set) => ({
     onlineUsers: [],
     typingUsers: {},
     setConversations: (conversations) => set({ conversations }),
-    setActiveConversation: (conversation) => set({ activeConversation: conversation, messages: [] }),
+    setActiveConversation: (conversation) => set((state) => {
+        if (state.activeConversation?.id === conversation?.id) return state;
+        return { activeConversation: conversation, messages: [] };
+    }),
     setMessages: (messages) => set({ messages }),
     addMessage: (message) => set((state) => {
         if (state.activeConversation && state.activeConversation.id === message.conversation_id) {
             const exist = state.messages.find(m => m.id === message.id);
             if (exist) return state;
-            return { messages: [message, ...state.messages] };
+            return { messages: [...state.messages, message] };
         }
         return state;
     }),
+    updateLastMessage: (message) => set((state) => ({
+        conversations: state.conversations.map(conv => {
+            if (conv.id === message.conversation_id) {
+                return {
+                    ...conv,
+                    last_message: message.content,
+                    last_message_time: message.created_at
+                };
+            }
+            return conv;
+        })
+    })),
     setOnlineUsers: (users) => set({
         onlineUsers: users,
     }),

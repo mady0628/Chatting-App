@@ -2,6 +2,8 @@ import express from 'express'
 import dotenv from 'dotenv'
 import cors from 'cors'
 import morgan from 'morgan'
+import { createServer } from 'http'
+import { initSocket } from './socket.js'
 import pool from './db/pool.js'
 import authRouter from './router/auth.router.js'
 import usersRouter from './router/users.router.js'
@@ -19,8 +21,12 @@ app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/conversation', conversationRouter);
 
+const server = createServer(app);
+
+initSocket(server);
+
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server run at ${PORT}`)
 })

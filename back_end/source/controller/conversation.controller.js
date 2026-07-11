@@ -128,6 +128,7 @@ export const getListConversations = async (req, res) => {
                 c.avatar_url AS group_avatar,
                 u.username AS other_user_name,
                 u.avatar_url AS other_user_avatar,
+                u.id AS other_user_id,
                 (
                     SELECT m.content
                     FROM messages m
@@ -192,7 +193,7 @@ export const getMessages = async (req, res) => {
         const messages = await pool.query(
             `
             SELECT
-            m.id, m.conversation_id, m.content, m.type, m.file_url, m.created_at,
+            m.id, m.conversation_id, m.sender_id, m.content, m.type, m.file_url, m.created_at,
             u.username as sender_name, u.avatar_url as sender_avatar
             FROM messages m
             JOIN users u
