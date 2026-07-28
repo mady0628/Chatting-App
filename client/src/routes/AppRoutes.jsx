@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from '../pages/Login.jsx';
 import Register from '../pages/Register.jsx';
 import Chat from '../pages/Chat.jsx';
+import Profile from '../pages/Profile.jsx';
 import ProtectedRoute from './ProtectedRoute.jsx';
 
 const AppRoutes = () => {
@@ -12,12 +13,13 @@ const AppRoutes = () => {
                 <Route path="/register" element={<Register />} />
                 <Route element={<ProtectedRoute />}>
                     <Route path='/' element={<Chat />} />
+                    <Route path='/profile' element={<Profile />} />
                 </Route>
                 {/*If URL not exist, redirect to Login*/}
                 <Route path='*' element={<Navigate to='/login' replace />} />
             </Routes>
         </BrowserRouter>
     );
-}
+};
 
 export default AppRoutes;

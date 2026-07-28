@@ -1,16 +1,46 @@
 import { useState } from 'react';
+import ReactDOM from 'react-dom';
 import useAuthStore from '../store/authStore.js';
 import useChatStore from '../store/chatStore.js';
-import { searchUserAPI, createDirectConversationAPI, getListConversationAPI } from '../api/endpoints.js';
+import { searchUserAPI, createDirectConversationAPI, getListConversationAPI, createGroupConversationAPI } from '../api/endpoints.js';
+import { useSocket } from '../hooks/useSocket.js';
+import ProfileModal from './ProfileModal.jsx';
+
+const getPreviewText = (conv, currentUser) => {
+    if (!conv || !conv.last_message) return "Chưa có tin nhắn nào";
+
+    const isImageMsg = conv.last_message_type === 'image' || 
+                       conv.last_message.startsWith('http://') || 
+                       conv.last_message.startsWith('https://');
+
+    const isOwnMsg = String(conv.last_message_sender_id || '') === String(currentUser?.id);
+    const senderPrefix = isOwnMsg ? "Bạn" : (conv.last_message_sender_name || "Thành viên");
+
+    if (isImageMsg) {
+        return `${senderPrefix} đã gửi 1 ảnh`;
+    }
+
+    if (conv.last_message.startsWith('Bạn:') || (conv.last_message_sender_name && conv.last_message.startsWith(`${conv.last_message_sender_name}:`))) {
+        return conv.last_message;
+    }
+
+    return `${senderPrefix}: ${conv.last_message}`;
+};
 
 const Sidebar = ({ logout }) => {
     const { user } = useAuthStore();
+    const { emitCreateConversation, joinConversation } = useSocket();
     const { conversations, setConversations, activeConversation, setActiveConversation, onlineUsers } = useChatStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const [groupName, setGroupName] = useState('');
+    const [groupSearchQuery, setGroupSearchQuery] = useState('');
+    const [groupSearchResult, setGroupSearchResult] = useState([]);
+    const [selectedMembers, setSelectedMembers] = useState([]);
 
-    // 1. Xử lý tìm kiếm (Vừa lọc danh sách cũ, vừa gọi API tìm người mới)
     const handleSearch = async (e) => {
         const query = e.target.value;
         setSearchQuery(query);
@@ -25,44 +55,41 @@ const Sidebar = ({ logout }) => {
         try {
             const res = await searchUserAPI(query);
             if (res.success) {
-                // Loại bỏ chính mình khỏi kết quả tìm kiếm
-                setSearchResults(res.data.filter(u => u.id !== user.id));
+                setSearchResults(res.data.filter(u => u.id !== user?.id));
             }
         } catch (err) {
             console.error("Lỗi khi tìm kiếm người dùng mới:", err);
         }
     };
 
-    // 2. Click bắt đầu trò chuyện với người mới
     const handleStartChat = async (targetUser) => {
         try {
             const res = await createDirectConversationAPI(targetUser.id);
             const conversationID = res.conversationID;
 
-            // Load lại danh sách phòng chat mới nhất
+            emitCreateConversation(conversationID, [user.id, targetUser.id]);
+            joinConversation(conversationID);
+
             const data = await getListConversationAPI();
             setConversations(data.conversations || []);
 
-            // Đặt cuộc trò chuyện vừa tạo/tìm thấy làm cuộc trò chuyện hoạt động
-            const newActive = data.conversations.find(c => c.id === conversationID);
+            const newActive = data.conversations.find(c => String(c.id) === String(conversationID));
             if (newActive) {
                 setActiveConversation(newActive);
             }
 
-            // Xóa nội dung tìm kiếm
             setSearchQuery('');
             setSearchResults([]);
             setIsSearching(false);
         } catch (err) {
-            // Nếu cuộc hội thoại đã tồn tại từ trước (lỗi 400 và backend trả về ID cũ)
             if (err.response?.data?.conversationID) {
                 const existingID = err.response.data.conversationID;
-                
+
                 try {
                     const data = await getListConversationAPI();
                     setConversations(data.conversations || []);
-                    
-                    const existingConv = data.conversations.find(c => c.id === existingID);
+
+                    const existingConv = data.conversations.find(c => String(c.id) === String(existingID));
                     if (existingConv) {
                         setActiveConversation(existingConv);
                     } else {
@@ -73,7 +100,7 @@ const Sidebar = ({ logout }) => {
                             other_user_name: targetUser.username
                         });
                     }
-                } catch (fetchErr) {
+                } catch {
                     setActiveConversation({
                         id: existingID,
                         type: 'direct',
@@ -91,70 +118,256 @@ const Sidebar = ({ logout }) => {
         }
     };
 
-    // Lọc danh sách trò chuyện hiện có theo từ khóa tìm kiếm (Local Search)
     const filteredConversations = conversations.filter(conv => {
         const displayName = conv.type === 'direct' ? conv.other_user_name : conv.group_name;
         return displayName?.toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    // Lọc danh sách người dùng mới: Chỉ lấy người dùng CHƯA có phòng chat trực tiếp với mình
     const newUsers = searchResults.filter(u => {
         const exists = conversations.some(conv => conv.type === 'direct' && conv.other_user_id === u.id);
         return !exists;
     });
 
-    return (
-        <div className="flex flex-col h-full bg-zinc-900/40 backdrop-blur-md">
-            {/* Header: Thông tin cá nhân & Đăng xuất */}
-            <div className="p-4 flex items-center justify-between border-b border-white/5 bg-zinc-900/40">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
-                        {user?.username?.charAt(0).toUpperCase()}
+    const handleGroupSearch = async (e) => {
+        const query = e.target.value;
+        setGroupSearchQuery(query);
+
+        if (!query.trim()) {
+            setGroupSearchResult([]);
+            return;
+        }
+        try {
+            const res = await searchUserAPI(query);
+            if (res.success) {
+                setGroupSearchResult(res.data.filter(u => u.id !== user?.id));
+            }
+        } catch (err) {
+            console.log("Error search user:", err.message);
+        }
+    };
+
+    const hanldeSelectMember = (member) => {
+        if (!selectedMembers.some(m => m.id === member.id)) {
+            setSelectedMembers([...selectedMembers, member]);
+        }
+        setGroupSearchQuery('');
+        setGroupSearchResult([]);
+    };
+
+    const handleRemoveMember = (memberID) => {
+        setSelectedMembers(selectedMembers.filter(m => m.id !== memberID));
+    };
+
+    const handleCreateGroup = async () => {
+        if (!groupName.trim()) {
+            alert("Vui lòng nhập tên nhóm");
+            return;
+        }
+        if (selectedMembers.length === 0) {
+            alert("Vui lòng chọn ít nhất 1 thành viên");
+            return;
+        }
+
+        try {
+            const memberIDs = selectedMembers.map(m => m.id);
+            const res = await createGroupConversationAPI(groupName, memberIDs);
+            emitCreateConversation(res.conversationID, [user.id, ...memberIDs]);
+            joinConversation(res.conversationID);
+
+            const data = await getListConversationAPI();
+            setConversations(data.conversations || []);
+
+            const newActive = data.conversations.find(c => String(c.id) === String(res.conversationID));
+            if (newActive) {
+                setActiveConversation(newActive);
+            }
+
+            setShowCreateGroupModal(false);
+            setSelectedMembers([]);
+            setGroupName('');
+        } catch (err) {
+            console.log("Error when create group", err.message);
+            alert("Không thể tạo nhóm");
+        }
+    };
+
+    const groupModalContent = showCreateGroupModal ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-sky-50/80 backdrop-blur-md p-4 animate-fade-in">
+            <div className="bg-white border border-sky-200/60 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+                <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                        Tạo Nhóm Chat Mới
+                    </h3>
+                    <button
+                        onClick={() => setShowCreateGroupModal(false)}
+                        className="text-slate-500 hover:text-slate-900 w-8 h-8 rounded-full flex items-center justify-center hover:bg-sky-100 transition cursor-pointer text-lg font-bold"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <div className="mb-4">
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Tên nhóm</label>
+                    <input
+                        type="text"
+                        value={groupName}
+                        onChange={(e) => setGroupName(e.target.value)}
+                        placeholder="Nhập tên nhóm chat..."
+                        className="w-full px-4 py-3 rounded-2xl bg-sky-100/60 border border-sky-200/80 text-slate-900 text-sm focus:outline-none focus:border-blue-200 focus:ring-2 focus:ring-blue-500/20 transition"
+                    />
+                </div>
+
+                <div className="mb-4">
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Thêm thành viên</label>
+                    <input
+                        type="text"
+                        value={groupSearchQuery}
+                        onChange={handleGroupSearch}
+                        placeholder="Tìm bạn bè theo tên..."
+                        className="w-full px-4 py-3 rounded-2xl bg-sky-100/60 border border-sky-200/80 text-slate-900 text-sm focus:outline-none focus:border-blue-200 focus:ring-2 focus:ring-blue-500/20 transition"
+                    />
+
+                    {groupSearchResult.length > 0 && (
+                        <div className="mt-2 max-h-40 overflow-y-auto bg-sky-50 border border-sky-100 rounded-2xl p-1 divide-y divide-slate-800">
+                            {groupSearchResult.map(u => (
+                                <button
+                                    key={u.id}
+                                    type="button"
+                                    onClick={() => hanldeSelectMember(u)}
+                                    className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-slate-700 hover:bg-sky-100/60 transition flex items-center justify-between cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-7 h-7 rounded-full bg-blue-600/30 text-blue-700 font-bold text-xs flex items-center justify-center">
+                                            {u.username?.charAt(0).toUpperCase()}
+                                        </div>
+                                        <span>{u.username}</span>
+                                    </div>
+                                    <span className="text-xs text-blue-600 font-bold bg-blue-500/10 px-2 py-1 rounded-lg border border-blue-200/20">+ Thêm</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {selectedMembers.length > 0 && (
+                    <div className="mb-6">
+                        <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Thành viên đã chọn ({selectedMembers.length})</label>
+                        <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-2 bg-sky-50/50 rounded-2xl border border-sky-100">
+                            {selectedMembers.map(m => (
+                                <span
+                                    key={m.id}
+                                    className="flex items-center gap-2 px-3 py-1 bg-blue-600/20 border border-blue-200/30 text-blue-700 rounded-xl text-xs font-semibold"
+                                >
+                                    {m.username}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveMember(m.id)}
+                                        className="text-blue-600 hover:text-slate-900 font-bold cursor-pointer"
+                                    >
+                                        ✕
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
                     </div>
-                    <div>
-                        <h4 className="font-semibold text-sm leading-tight text-white">{user?.username}</h4>
-                        <span className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Trực tuyến
+                )}
+
+                <div className="flex justify-end gap-3 pt-2 border-t border-sky-100">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowCreateGroupModal(false);
+                            setGroupName('');
+                            setSelectedMembers([]);
+                        }}
+                        className="px-4 py-2.5 rounded-2xl text-slate-500 hover:text-slate-900 text-sm font-semibold transition cursor-pointer"
+                    >
+                        Hủy
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleCreateGroup}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-sm transition cursor-pointer shadow-lg shadow-blue-200/30 active:scale-95"
+                    >
+                        Tạo Nhóm
+                    </button>
+                </div>
+            </div>
+        </div>
+    ) : null;
+
+    return (
+        <div className="flex flex-col h-full bg-white border-r border-sky-100 text-slate-900 select-none">
+            <div className="p-4 flex items-center justify-between border-b border-sky-100 bg-white/90">
+                <button
+                    onClick={() => setShowProfileModal(true)}
+                    className="flex items-center gap-3 text-left hover:opacity-90 transition cursor-pointer group flex-1 min-w-0 mr-2"
+                    title="Chỉnh sửa hồ sơ cá nhân"
+                >
+                    <div className="relative shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-blue-600 overflow-hidden flex items-center justify-center font-bold text-white shadow-md border-2 border-blue-200/50 group-hover:border-blue-300 transition">
+                            {user?.avatar_url ? (
+                                <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                            ) : (
+                                user?.username?.charAt(0).toUpperCase()
+                            )}
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
+                    </div>
+                    <div className="min-w-0">
+                        <h4 className="font-bold text-sm text-slate-900 group-hover:text-blue-700 transition truncate flex items-center gap-1.5">
+                            <span className="truncate">{user?.username}</span>
+                        </h4>
+                        <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
+                            Trực tuyến
                         </span>
                     </div>
-                </div>
+                </button>
                 <button
                     onClick={logout}
-                    className="text-zinc-400 hover:text-red-400 transition text-xs font-semibold cursor-pointer py-1.5 px-3 rounded-lg hover:bg-white/5"
+                    className="text-slate-500 hover:text-rose-400 transition text-xs font-semibold cursor-pointer py-1.5 px-3 rounded-xl hover:bg-sky-100 shrink-0"
+                    title="Đăng xuất tài khoản"
                 >
                     Đăng xuất
                 </button>
             </div>
 
-            {/* Ô tìm kiếm */}
-            <div className="p-3">
-                <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={handleSearch}
-                    placeholder="Tìm cuộc hội thoại hoặc người dùng..."
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-sm placeholder-zinc-500 focus:outline-none"
-                />
+            <div className="p-3.5 flex gap-2 border-b border-sky-100/60">
+                <div className="relative flex-1">
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={handleSearch}
+                        placeholder="Tìm hội thoại hoặc bạn..."
+                        className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-sky-50/60 border border-sky-100 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:border-blue-200 focus:ring-1 focus:ring-blue-500 transition"
+                    />
+                    <span className="absolute left-3 top-2.5 text-slate-500 text-sm">Tìm</span>
+                </div>
+                <button
+                    onClick={() => setShowCreateGroupModal(true)}
+                    className="px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm transition cursor-pointer active:scale-95 shadow-md shadow-blue-200/20 flex items-center justify-center shrink-0"
+                    title="Tạo nhóm chat mới"
+                >
+                    Tạo nhóm
+                </button>
             </div>
 
-            {/* Nội dung danh sách */}
-            <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-2.5 py-3 space-y-1">
                 {isSearching && searchQuery.trim() ? (
                     <div>
-                        <div className="px-3 py-1.5 text-[10px] text-zinc-500 font-semibold tracking-wider uppercase mb-1">
+                        <div className="px-3 py-1.5 text-[10px] text-slate-500 font-bold tracking-wider uppercase mb-1">
                             Kết quả tìm kiếm
                         </div>
                         {filteredConversations.length === 0 && newUsers.length === 0 ? (
-                            <div className="px-3 py-4 text-center text-xs text-zinc-500 bg-white/2 rounded-xl border border-white/5">
-                                Không tìm thấy cuộc hội thoại hay người dùng nào
+                            <div className="px-3 py-6 text-center text-xs text-slate-500 bg-sky-50/40 rounded-2xl border border-sky-100">
+                                Không tìm thấy ai phù hợp từ khóa
                             </div>
                         ) : (
                             <>
-                                {/* RENDER HỘI THOẠI CŨ KHỚP TỪ KHÓA */}
                                 {filteredConversations.map(conv => {
                                     const isDirect = conv.type === 'direct';
                                     const displayName = isDirect ? conv.other_user_name : conv.group_name;
-                                    const isOnline = isDirect && onlineUsers.includes(conv.other_user_id);
+                                    const isOnline = isDirect && onlineUsers.includes(String(conv.other_user_id));
                                     return (
                                         <button
                                             key={conv.id}
@@ -164,92 +377,122 @@ const Sidebar = ({ logout }) => {
                                                 setSearchResults([]);
                                                 setIsSearching(false);
                                             }}
-                                            className={`w-full flex items-center gap-3 p-3 rounded-xl transition text-left cursor-pointer mb-1 ${
+                                            className={`w-full flex items-center gap-3 p-3 rounded-2xl transition text-left cursor-pointer mb-1 ${
                                                 activeConversation?.id === conv.id
-                                                    ? 'bg-indigo-600/25 border border-indigo-500/20 text-white'
-                                                    : 'hover:bg-white/5 text-zinc-300'
+                                                    ? 'bg-blue-50 border border-blue-200 text-blue-800'
+                                                    : 'hover:bg-sky-100/60 text-slate-700'
                                             }`}
                                         >
-                                            <div className="relative">
-                                                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-white">
-                                                    {displayName?.charAt(0).toUpperCase()}
+                                            <div className="relative shrink-0">
+                                                <div className="w-11 h-11 rounded-full bg-sky-100 flex items-center justify-center font-bold text-slate-900 shadow-inner overflow-hidden">
+                                                    {(isDirect ? conv.other_user_avatar : conv.group_avatar) ? (
+                                                        <img src={isDirect ? conv.other_user_avatar : conv.group_avatar} alt={displayName} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        displayName?.charAt(0).toUpperCase()
+                                                    )}
                                                 </div>
                                                 {isOnline && (
-                                                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-zinc-900 rounded-full"></span>
+                                                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
                                                 )}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <h5 className="font-semibold text-sm truncate">{displayName}</h5>
-                                                <p className="text-xs text-zinc-400 truncate">{conv.last_message || 'Chưa có tin nhắn'}</p>
+                                                <h5 className="font-bold text-sm text-slate-900 truncate">{displayName}</h5>
+                                                <div className="flex items-center justify-between mt-1">
+                                                    <p className={`text-xs truncate ${conv.unread_count > 0 ? 'text-slate-900 font-bold' : 'text-slate-500'}`}>
+                                                        {getPreviewText(conv, user)}
+                                                    </p>
+                                                    {conv.unread_count > 0 && (
+                                                        <span className="flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-md ml-2 shrink-0">
+                                                            {conv.unread_count}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </button>
                                     );
                                 })}
 
-                                {/* RENDER NGƯỜI DÙNG MỚI CHƯA TỪNG CHAT */}
-                                {newUsers.map(u => (
-                                    <button
-                                        key={u.id}
-                                        onClick={() => handleStartChat(u)}
-                                        className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition text-left cursor-pointer mb-1"
-                                    >
-                                        <div className="w-10 h-10 rounded-full bg-purple-600/40 flex items-center justify-center font-bold text-purple-200">
-                                            {u.username.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-sm truncate text-zinc-200">{u.username}</div>
-                                            <span className="text-[10px] text-indigo-400">Tạo cuộc trò chuyện mới</span>
-                                        </div>
-                                    </button>
-                                ))}
+                                {newUsers.map(u => {
+                                    const isUserOnline = onlineUsers.includes(String(u.id));
+                                    return (
+                                        <button
+                                            key={u.id}
+                                            onClick={() => handleStartChat(u)}
+                                            className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-sky-100/60 transition text-left cursor-pointer mb-1 border border-dashed border-blue-200/20"
+                                        >
+                                            <div className="relative shrink-0">
+                                                <div className="w-11 h-11 rounded-full bg-sky-500/30 border border-sky-200/30 flex items-center justify-center font-bold text-sky-700">
+                                                    {u.username?.charAt(0).toUpperCase()}
+                                                </div>
+                                                {isUserOnline && (
+                                                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-bold text-sm truncate text-slate-900">{u.username}</div>
+                                                <span className="text-[11px] text-blue-600 font-medium">Bắt đầu nhắn tin mới</span>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                             </>
                         )}
                     </div>
                 ) : (
-                    /* HIỂN THỊ TOÀN BỘ DANH SÁCH CHAT KHI KHÔNG TÌM KIẾM */
                     <div>
-                        <div className="px-3 py-1.5 text-[10px] text-zinc-500 font-semibold tracking-wider uppercase mb-1">
+                        <div className="px-3 py-1.5 text-[10px] text-slate-500 font-bold tracking-wider uppercase mb-1">
                             Trò chuyện gần đây
                         </div>
                         {conversations.length === 0 ? (
-                            <div className="px-3 py-4 text-center text-xs text-zinc-500 bg-white/2 rounded-xl border border-white/5">
-                                Chưa có cuộc hội thoại nào. Hãy tìm bạn để bắt đầu chat!
+                            <div className="px-3 py-8 text-center text-xs text-slate-500 bg-sky-50/40 rounded-2xl border border-sky-100/60">
+                                Chưa có cuộc hội thoại nào.<br/>Nhập tên bạn bè ở trên để bắt đầu!
                             </div>
                         ) : (
                             conversations.map(conv => {
                                 const isDirect = conv.type === 'direct';
                                 const displayName = isDirect ? conv.other_user_name : conv.group_name;
-                                const isOnline = isDirect && onlineUsers.includes(conv.other_user_id);
+                                const isOnline = isDirect && onlineUsers.includes(String(conv.other_user_id));
                                 return (
                                     <button
                                         key={conv.id}
                                         onClick={() => setActiveConversation(conv)}
-                                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition text-left cursor-pointer mb-1 ${
+                                        className={`w-full flex items-center gap-3 p-3 rounded-2xl transition text-left cursor-pointer mb-1 ${
                                             activeConversation?.id === conv.id
-                                                ? 'bg-indigo-600/20 border border-indigo-500/20 text-white'
-                                                : 'hover:bg-white/5 text-zinc-300'
+                                                ? 'bg-blue-50 border border-blue-200 text-blue-800'
+                                                : 'hover:bg-sky-100/60 text-slate-700'
                                         }`}
                                     >
-                                        <div className="relative">
-                                            <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-zinc-200">
-                                                {displayName?.charAt(0).toUpperCase()}
+                                        <div className="relative shrink-0">
+                                            <div className="w-11 h-11 rounded-full bg-sky-100 flex items-center justify-center font-bold text-slate-900 shadow-inner overflow-hidden">
+                                                {(isDirect ? conv.other_user_avatar : conv.group_avatar) ? (
+                                                    <img src={isDirect ? conv.other_user_avatar : conv.group_avatar} alt={displayName} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    displayName?.charAt(0).toUpperCase()
+                                                )}
                                             </div>
                                             {isOnline && (
-                                                <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-zinc-900 rounded-full"></span>
+                                                <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between">
-                                                <h5 className="font-semibold text-sm truncate">{displayName}</h5>
+                                                <h5 className="font-bold text-sm text-slate-900 truncate">{displayName}</h5>
                                                 {conv.last_message_time && (
-                                                    <span className="text-[10px] text-zinc-500">
+                                                    <span className="text-[10px] text-slate-500 shrink-0 ml-1">
                                                         {new Date(conv.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 )}
                                             </div>
-                                            <p className="text-xs text-zinc-400 truncate mt-0.5">
-                                                {conv.last_message || "Chưa có tin nhắn nào"}
-                                            </p>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <p className={`text-xs truncate ${conv.unread_count > 0 ? 'text-slate-900 font-bold' : 'text-slate-500'}`}>
+                                                    {getPreviewText(conv, user)}
+                                                </p>
+                                                {conv.unread_count > 0 && (
+                                                    <span className="flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-md ml-2 shrink-0">
+                                                        {conv.unread_count}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </button>
                                 );
@@ -258,8 +501,17 @@ const Sidebar = ({ logout }) => {
                     </div>
                 )}
             </div>
+
+            <ProfileModal
+                isOpen={showProfileModal}
+                onClose={() => setShowProfileModal(false)}
+            />
+
+            {groupModalContent && ReactDOM.createPortal(groupModalContent, document.body)}
         </div>
     );
 };
 
 export default Sidebar;
+
+

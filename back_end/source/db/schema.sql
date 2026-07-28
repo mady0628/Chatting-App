@@ -43,23 +43,32 @@ CREATE TABLE IF NOT EXISTS messages(
     deleted_at TIMESTAMP
 );
 
-ALTER TABlE conversation_members
-ADD CONSTRAINT fk_last_read_message
-FOREIGN KEY (last_read_message_id)
-REFERENCES messages(id)
-ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS pinned_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    pinned_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(conversation_id, message_id)
+);
 
-CREATE INDEX idx_users_email
-ON users(email);
+-- ALTER TABlE conversation_members
+-- ADD CONSTRAINT fk_last_read_message
+-- FOREIGN KEY (last_read_message_id)
+-- REFERENCES messages(id)
+-- ON DELETE SET NULL;
 
-CREATE INDEX idx_conversation_members_user_id
-ON conversation_members(user_id);
+-- CREATE INDEX idx_users_email
+-- ON users(email);
 
-CREATE INDEX idx_conversation_members_conversation_id
-ON conversation_members(conversation_id);
+-- CREATE INDEX idx_conversation_members_user_id
+-- ON conversation_members(user_id);
 
-CREATE INDEX idx_messages_conversation_created_at
-ON messages(conversation_id, created_at DESC);
+-- CREATE INDEX idx_conversation_members_conversation_id
+-- ON conversation_members(conversation_id);
 
-CREATE INDEX idx_messages_sender_id
-ON messages(sender_id);
+-- CREATE INDEX idx_messages_conversation_created_at
+-- ON messages(conversation_id, created_at DESC);
+
+-- CREATE INDEX idx_messages_sender_id
+-- ON messages(sender_id);

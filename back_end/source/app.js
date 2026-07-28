@@ -20,6 +20,7 @@ app.use(morgan("dev"));
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/conversation', conversationRouter);
+app.use('/uploads', express.static('uploads'));
 
 const server = createServer(app);
 
