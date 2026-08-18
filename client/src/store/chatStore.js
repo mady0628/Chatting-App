@@ -15,7 +15,27 @@ const useChatStore = create((set) => ({
         if (state.activeConversation?.id === conversation?.id) return state;
         return { activeConversation: conversation, messages: [], conversationMembers: [], pinnedList: [] };
     }),
-    setMessages: (messages) => set({ messages }),
+    setMessages: (messages) => set(() => {
+        const seen = new Set();
+        const uniqueMessages = (Array.isArray(messages) ? messages : []).filter(m => {
+            if (!m || !m.id) return false;
+            const idStr = String(m.id);
+            if (seen.has(idStr)) return false;
+            seen.add(idStr);
+            return true;
+        });
+        return { messages: uniqueMessages };
+    }),
+    prependMessages: (olderMessages) => set((state) => {
+        const existingIds = new Set(state.messages.map(m => String(m.id)));
+        const uniqueOlder = (Array.isArray(olderMessages) ? olderMessages : []).filter(m => !existingIds.has(String(m.id)));
+        return { messages: [...uniqueOlder, ...state.messages] };
+    }),
+    appendMessages: (newerMessages) => set((state) => {
+        const existingIds = new Set(state.messages.map(m => String(m.id)));
+        const uniqueNewer = (Array.isArray(newerMessages) ? newerMessages : []).filter(m => !existingIds.has(String(m.id)));
+        return { messages: [...state.messages, ...uniqueNewer] };
+    }),
     setConversationMember: (members) => set({ conversationMembers: members }),
     addMessage: (message) => set((state) => {
         if (state.activeConversation && String(state.activeConversation.id) === String(message.conversation_id)) {
@@ -137,6 +157,9 @@ const useChatStore = create((set) => ({
             ? { ...state.activeConversation, group_name: group_name || state.activeConversation.group_name, group_avatar: group_avatar || state.activeConversation.group_avatar }
             : state.activeConversation
     })),
-    setPinnedList: (pinnedList) => set({ pinnedList })
+    setPinnedList: (pinnedList) => set({ pinnedList }),
+    updateMessageReactions: (messageID, reactions) => set((state) => ({
+        messages: state.messages.map(m => String(m.id) === String(messageID) ? { ...m, reactions } : m)
+    }))
 }))
 export default useChatStore;

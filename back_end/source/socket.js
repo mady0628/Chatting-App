@@ -336,6 +336,44 @@ export const initSocket = (server) => {
             io.to(`conversation:${conversationID}`).emit('pinned_list_updated', { conversationID, pinnedList });
         })
 
+        //reaction toggle
+        socket.on('update_reactions', (data) => {
+            const { conversationID, messageID, reactions } = data;
+            io.to(`conversation:${conversationID}`).emit('message_reaction_updated', { conversationID, messageID, reactions });
+        })
+
+        //send friend request
+        socket.on('send_friend_request', (data) => {
+            try {
+                const { receiveID, requestID, senderInfo } = data;
+                const targetSocketID = onlineUser.get(String(receiveID));
+                if (targetSocketID) {
+                    io.to(targetSocketID).emit('receive_friend_request', {
+                        requestID,
+                        senderInfo
+                    });
+                }
+            } catch (err) {
+                console.error('error send_friend_request socket: ', err.message);
+            }
+        });
+
+        //accept friend request
+        socket.on('accept_friend_request', (data) => {
+            try {
+                const { senderID, friendInfo } = data;
+                const targetSocketID = onlineUser.get(String(senderID));
+                if (targetSocketID) {
+                    io.to(targetSocketID).emit('friend_request_accepted', {
+                        friendInfo
+                    });
+                }
+            } catch (err) {
+                console.error('error accept_friend_request socket: ', err.message);
+            }
+        });
+
+
         //user disconnect
         socket.on('disconnect', () => {
             console.log(`User disconnect: ${userID}`);

@@ -52,6 +52,32 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
     UNIQUE(conversation_id, message_id)
 );
 
+CREATE TABLE IF NOT EXISTS message_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(message_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS friend_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receive_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(sender_id,receive_id),
+    CHECK (sender_id != receive_id)
+);
+CREATE TABLE IF NOT EXISTS friends (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(user1_id, user2_id),
+    CHECK (user1_id != user2_id)
+)
+
 -- ALTER TABlE conversation_members
 -- ADD CONSTRAINT fk_last_read_message
 -- FOREIGN KEY (last_read_message_id)

@@ -1,28 +1,36 @@
 import { useEffect } from 'react';
 import useAuthStore from '../store/authStore.js';
 import useChatStore from '../store/chatStore.js';
+import useFriendStore from '../store/friendStore.js';
 import { useSocket } from '../hooks/useSocket.js';
-import { getListConversationAPI } from '../api/endpoints.js';
+import { getListConversationAPI, getListFriendAPI, getListFriendRequestAPI } from '../api/endpoints.js';
 import Sidebar from "../components/Sidebar.jsx";
 import ChatWindow from "../components/ChatWindow.jsx";
 
 const Chat = () => {
     const { logout } = useAuthStore();
     const { setConversations, activeConversation } = useChatStore();
+    const { setFriends, setFriendRequests } = useFriendStore();
 
     const { joinConversation, leaveConversation } = useSocket();
 
     useEffect(() => {
-        const fetchConversations = async () => {
+        const fetchData = async () => {
             try {
-                const data = await getListConversationAPI();
-                setConversations(data.conversations || []);
+                const [convData, friendsRes, requestsRes] = await Promise.all([
+                    getListConversationAPI(),
+                    getListFriendAPI(),
+                    getListFriendRequestAPI()
+                ]);
+                setConversations(convData.conversations || []);
+                if (friendsRes.success) setFriends(friendsRes.friends || []);
+                if (requestsRes.success) setFriendRequests(requestsRes.friendRequests || []);
             } catch (err) {
-                console.error("Error when get list conversation: ", err);
+                console.error("Error when fetching initial data: ", err);
             }
         };
-        fetchConversations();
-    }, [setConversations]);
+        fetchData();
+    }, [setConversations, setFriends, setFriendRequests]);
 
     useEffect(() => {
         if (activeConversation) {

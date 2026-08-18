@@ -3,8 +3,9 @@ import { io } from 'socket.io-client';
 import useAuthStore from '../store/authStore';
 import useChatStore from '../store/chatStore';
 import { getConversationMembersAPI, markAsReadAPI } from '../api/endpoints';
+import useFriendStore from '../store/friendStore';
 
-const SOCKET_URL = 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 let socket = null;
 
 export const useSocket = () => {
@@ -136,6 +137,28 @@ export const useSocket = () => {
                     useChatStore.getState().setPinnedList(pinnedList || []);
                 }
             });
+
+            socket.on('message_reaction_updated', ({ messageID, reactions }) => {
+                useChatStore.getState().updateMessageReactions(messageID, reactions);
+            });
+
+            socket.on('receive_friend_request', ({ requestID, senderInfo, created_at }) => {
+                useFriendStore.getState().addFriendRequest({
+                    request_id: requestID,
+                    sender_id: senderInfo?.id,
+                    sender_name: senderInfo?.username,
+                    sender_avatar: senderInfo?.avatar_url,
+                    request_created_at: created_at || new Date()
+                });
+            });
+
+            socket.on('friend_request_accepted', ({ friendInfo }) => {
+                useFriendStore.getState().addFriend({
+                    friend_id: friendInfo?.id,
+                    friend_name: friendInfo?.username,
+                    friend_avatar: friendInfo?.avatar_url
+                });
+            });
         }
 
         return () => {
@@ -220,6 +243,24 @@ export const useSocket = () => {
         }
     }
 
+    const emitUpdateReactions = (conversationID, messageID, reactions) => {
+        if (socket) {
+            socket.emit('update_reactions', { conversationID, messageID, reactions });
+        }
+    }
+
+    const emitSendFriendRequest = (receiveID, requestID, senderInfo) => {
+        if (socket) {
+            socket.emit('send_friend_request', { receiveID, requestID, senderInfo });
+        }
+    }
+
+    const emitAcceptFriendRequest = (senderID, friendInfo) => {
+        if (socket) {
+            socket.emit('accept_friend_request', { senderID, friendInfo });
+        }
+    }
+
     return {
         socket,
         joinConversation,
@@ -234,6 +275,9 @@ export const useSocket = () => {
         emitRemoveMember,
         emitAddMember,
         emitLeaveConversation,
-        emitUpdatePinnedList
+        emitUpdatePinnedList,
+        emitUpdateReactions,
+        emitSendFriendRequest,
+        emitAcceptFriendRequest
     };
 };

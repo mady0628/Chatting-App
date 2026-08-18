@@ -108,3 +108,68 @@ export const unpinMessageAPI = async ({ conversationID, messageID }) => {
     const response = await api.delete(`/conversation/${conversationID}/unpin/${messageID}`);
     return response.data;
 }
+
+export const toggleReactionAPI = async ({ conversationID, messageID, emoji }) => {
+    const response = await api.post(`/conversation/${conversationID}/messages/${messageID}/react`, { emoji });
+    return response.data;
+}
+
+export const searchMessageAPI = async ({ conversationID, content }) => {
+    const response = await api.get(`/conversation/${conversationID}/messages/search?content=${encodeURIComponent(content)}`);
+    return response.data;
+}
+
+export const getMessagesContext = async ({ conversationID, messageID }) => {
+    const response = await api.get(`/conversation/${conversationID}/messages/${messageID}/context`);
+    return response.data;
+}
+
+export const getMessagesBeforeAPI = async ({ conversationID, messageID }) => {
+    const response = await api.get(`/conversation/${conversationID}/messages/before?messageID=${messageID}`);
+    return response.data;
+}
+
+export const getMessagesAfterAPI = async ({ conversationID, messageID }) => {
+    const response = await api.get(`/conversation/${conversationID}/messages/after?messageID=${messageID}`);
+    return response.data;
+}
+
+export const getConversationImagesAPI = async ({ conversationID, limit = 9, offset = 0 }) => {
+    const response = await api.get(`/conversation/${conversationID}/images?limit=${limit}&offset=${offset}`);
+    return response.data;
+}
+
+export const sendFriendRequestAPI = async ({ receiveID }) => {
+    const response = await api.post('/conversation/friend-request', { receiveID });
+    return response.data;
+}
+
+export const acceptFriendRequestAPI = async ({ requestID }) => {
+    const response = await api.post('/conversation/friend-request/accept', { requestID });
+    return response.data;
+}
+
+export const rejectFriendRequestAPI = async ({ requestID }) => {
+    const response = await api.post('/conversation/friend-request/reject', { requestID });
+    return response.data;
+}
+
+export const cancelFriendRequestAPI = async (requestID) => {
+    const response = await api.delete(`/conversation/friend-request/cancel/${requestID}`);
+    return response.data;
+}
+
+export const removeFriendAPI = async (friendID) => {
+    const response = await api.delete(`/conversation/friend/remove/${friendID}`);
+    return response.data;
+}
+
+export const getListFriendAPI = async (sortOrder = 'ASC') => {
+    const response = await api.get(`/conversation/friend/get-all?sortOrder=${sortOrder}`);
+    return response.data;
+}
+
+export const getListFriendRequestAPI = async (sortOrder = 'ASC') => {
+    const response = await api.get(`/conversation/friend-request/get-all?sortOrder=${sortOrder}`);
+    return response.data;
+}

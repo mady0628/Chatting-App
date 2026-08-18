@@ -1,7 +1,7 @@
 import express from 'express'
 import { authMiddleware } from "../middleware/auth.middleware.js"
 import upload from '../middleware/multer.js';
-import { createConversation, creatGroupConversation, getConversationMembers, getListConversations, getMessages, markAsRead, editMessage, deleteMessage, removeMember, leaveGroup, addMemberToConversation, uploadFile, updateGroupProfile, getPinnedMessage, pinMessage, unpinMessage } from "../controller/conversation.controller.js"
+import { createConversation, creatGroupConversation, getConversationMembers, getListConversations, getMessages, markAsRead, editMessage, deleteMessage, removeMember, leaveGroup, addMemberToConversation, uploadFile, updateGroupProfile, getPinnedMessage, pinMessage, unpinMessage, toggleReaction, searchMessage, getMessagesContext, getMessagesBefore, getMessagesAfter, getConversationImages, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, removeFriend, cancelFriendRequest, getListFriend, getListFriendRequest } from "../controller/conversation.controller.js"
 const router = express.Router();
 
 router.post('/direct', authMiddleware, createConversation)
@@ -20,4 +20,17 @@ router.put('/group/:conversationID/update-profile', authMiddleware, updateGroupP
 router.post('/:conversationID/pin/:messageID', authMiddleware, pinMessage)
 router.delete('/:conversationID/unpin/:messageID', authMiddleware, unpinMessage)
 router.get('/:conversationID/pinned-messages', authMiddleware, getPinnedMessage)
+router.post('/:conversationID/messages/:messageID/react', authMiddleware, toggleReaction)
+router.get('/:conversationID/messages/search', authMiddleware, searchMessage)
+router.get('/:conversationID/messages/before', authMiddleware, getMessagesBefore)
+router.get('/:conversationID/messages/after', authMiddleware, getMessagesAfter)
+router.get('/:conversationID/images', authMiddleware, getConversationImages)
+router.get('/:conversationID/messages/:messageID/context', authMiddleware, getMessagesContext)
+router.post('/friend-request', authMiddleware, sendFriendRequest);
+router.post('/friend-request/accept', authMiddleware, acceptFriendRequest);
+router.post('/friend-request/reject', authMiddleware, rejectFriendRequest);
+router.delete('/friend/remove/:friendID', authMiddleware, removeFriend);
+router.delete('/friend-request/cancel/:requestID', authMiddleware, cancelFriendRequest)
+router.get('/friend/get-all', authMiddleware, getListFriend)
+router.get('/friend-request/get-all', authMiddleware, getListFriendRequest)
 export default router;
