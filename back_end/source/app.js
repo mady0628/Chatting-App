@@ -8,18 +8,22 @@ import pool from './db/pool.js'
 import authRouter from './router/auth.router.js'
 import usersRouter from './router/users.router.js'
 import conversationRouter from './router/conversation.router.js'
+import adminRouter from './router/admin.router.js'
+import cookieParser from 'cookie-parser'
 
 dotenv.config()
 
 const app = express();
 
-app.use(cors());
+app.use(cookieParser());
+app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
 app.use(express.json());
 app.use(morgan("dev"));
 
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/conversation', conversationRouter);
+app.use('/api/admin', adminRouter);
 app.use('/uploads', express.static('uploads'));
 
 const server = createServer(app);

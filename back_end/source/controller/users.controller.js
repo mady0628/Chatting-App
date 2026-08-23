@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 
 export const getUsers = async (req, res) => {
     try {
-        const { q } = req.query;
+        const { q, limit = 20, offset = 0 } = req.query;
         const currentUserId = req.user.id;
 
         if (!q || !currentUserId) {
@@ -12,7 +12,7 @@ export const getUsers = async (req, res) => {
             })
         }
 
-        const result = await pool.query('SELECT id, username, avatar_url FROM users WHERE username ILIKE $1', [`%${q}%`]);
+        const result = await pool.query('SELECT id, username, avatar_url FROM users WHERE username ILIKE $1 LIMIT $2 OFFSET $3', [`%${q}%`, limit, offset]);
         res.status(200).json({
             success: true,
             data: result.rows,

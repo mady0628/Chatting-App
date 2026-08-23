@@ -1,7 +1,7 @@
 import express from 'express'
 import { authMiddleware } from "../middleware/auth.middleware.js"
 import upload from '../middleware/multer.js';
-import { createConversation, creatGroupConversation, getConversationMembers, getListConversations, getMessages, markAsRead, editMessage, deleteMessage, removeMember, leaveGroup, addMemberToConversation, uploadFile, updateGroupProfile, getPinnedMessage, pinMessage, unpinMessage, toggleReaction, searchMessage, getMessagesContext, getMessagesBefore, getMessagesAfter, getConversationImages, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, removeFriend, cancelFriendRequest, getListFriend, getListFriendRequest } from "../controller/conversation.controller.js"
+import { createConversation, creatGroupConversation, getConversationMembers, getListConversations, getMessages, markAsRead, editMessage, deleteMessage, removeMember, leaveGroup, addMemberToConversation, uploadFile, updateGroupProfile, getPinnedMessage, pinMessage, unpinMessage, toggleReaction, searchMessage, getMessagesContext, getMessagesBefore, getMessagesAfter, getConversationImages, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, removeFriend, cancelFriendRequest, getListFriend, getListFriendRequest, changeAdminRole, disbandGroup } from "../controller/conversation.controller.js"
 const router = express.Router();
 
 router.post('/direct', authMiddleware, createConversation)
@@ -17,6 +17,8 @@ router.delete('/:conversationID/leave', authMiddleware, leaveGroup)
 router.post('/:conversationID/add-member', authMiddleware, addMemberToConversation)
 router.post('/upload', authMiddleware, upload.single('file'), uploadFile)
 router.put('/group/:conversationID/update-profile', authMiddleware, updateGroupProfile)
+router.patch('/:conversationID/transfer-admin', authMiddleware, changeAdminRole)
+router.delete('/:conversationID/disband', authMiddleware, disbandGroup)
 router.post('/:conversationID/pin/:messageID', authMiddleware, pinMessage)
 router.delete('/:conversationID/unpin/:messageID', authMiddleware, unpinMessage)
 router.get('/:conversationID/pinned-messages', authMiddleware, getPinnedMessage)

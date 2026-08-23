@@ -8,6 +8,31 @@ import useFriendStore from '../store/friendStore';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 let socket = null;
 
+const playNotificationSound = () => {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08);
+
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+        console.error("Audio playback error:", e);
+    }
+};
+
 export const useSocket = () => {
     const { token, isAuthenticated } = useAuthStore();
     const {
@@ -40,6 +65,12 @@ export const useSocket = () => {
                 console.log('Socket connected successfully');
             });
 
+            socket.on('account_banned', (data) => {
+                alert(data?.message || "Tài khoản của bạn đã bị khóa bởi Quản trị viên!");
+                useAuthStore.getState().logout();
+                window.location.href = '/login';
+            });
+
             socket.on('get_online_users', (users) => {
                 setOnlineUsers(users);
             });
@@ -53,10 +84,13 @@ export const useSocket = () => {
             });
 
             socket.on('receive_message', (message) => {
+                const currentUser = useAuthStore.getState().user;
+                if (String(message.sender_id) !== String(currentUser?.id)) {
+                    playNotificationSound();
+                }
                 addMessage(message);
                 updateLastMessage(message);
                 const active = useChatStore.getState().activeConversation;
-                const currentUser = useAuthStore.getState().user;
                 if (active && String(active.id) === String(message.conversation_id) && String(message.sender_id) !== String(currentUser?.id)) {
                     markAsReadAPI(message.conversation_id).catch(err => console.error(err));
                     socket.emit('mark_as_read', { conversationID: message.conversation_id, lastReadMessageID: message.id });

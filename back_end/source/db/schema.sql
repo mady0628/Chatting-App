@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     avatar_url TEXT,
     status_message TEXT,
+    system_role VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_banned BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

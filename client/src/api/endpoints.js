@@ -11,6 +11,16 @@ export const registerAPI = async (username, email, password) => {
     return response.data;
 };
 
+export const logoutAPI = async () => {
+    const response = await api.post('/auth/logout');
+    return response.data;
+};
+
+export const refreshTokenAPI = async () => {
+    const response = await api.post('/auth/refresh');
+    return response.data;
+};
+
 // User Profile & Account API
 export const updateProfileAPI = async (formData) => {
     const response = await api.put('/users/profile', formData, {
@@ -173,3 +183,44 @@ export const getListFriendRequestAPI = async (sortOrder = 'ASC') => {
     const response = await api.get(`/conversation/friend-request/get-all?sortOrder=${sortOrder}`);
     return response.data;
 }
+
+export const changeAdminRoleAPI = async (conversationID, newAdminID) => {
+    const response = await api.patch(`/conversation/${conversationID}/transfer-admin`, { newAdminID });
+    return response.data;
+}
+
+export const disbandGroupAPI = async (conversationID) => {
+    const response = await api.delete(`/conversation/${conversationID}/disband`);
+    return response.data;
+}
+
+// System Admin API
+export const getSystemStatsAPI = async () => {
+    const response = await api.get('/admin/stats');
+    return response.data;
+};
+
+export const getAdminUsersAPI = async (q = '', limit = 20, offset = 0) => {
+    const response = await api.get(`/admin/users?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`);
+    return response.data;
+};
+
+export const toggleBanUserAPI = async (targetUserID) => {
+    const response = await api.patch(`/admin/users/${targetUserID}/ban`);
+    return response.data;
+};
+
+export const changeSystemRoleAPI = async (targetUserID, newRole) => {
+    const response = await api.patch(`/admin/users/${targetUserID}/role`, { newRole });
+    return response.data;
+};
+
+export const getAdminConversationsAPI = async (limit = 20, offset = 0) => {
+    const response = await api.get(`/admin/conversations?limit=${limit}&offset=${offset}`);
+    return response.data;
+};
+
+export const getAdminConversationMessagesAPI = async (conversationID, limit = 30, offset = 0) => {
+    const response = await api.get(`/admin/conversations/${conversationID}/messages?limit=${limit}&offset=${offset}`);
+    return response.data;
+};

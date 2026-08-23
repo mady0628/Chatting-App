@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import useAuthStore from '../store/authStore.js';
 import useChatStore from '../store/chatStore.js';
 import { useSocket } from '../hooks/useSocket.js';
-import { getMessagesAPI, getConversationMembersAPI, markAsReadAPI, removeMemberAPI, leaveConversationAPI, addMemberToConversationAPI, searchUserAPI, uploadFileAPI, getPinnedMessageAPI, pinnedMessageAPI, unpinMessageAPI, toggleReactionAPI, searchMessageAPI, getMessagesContext, getMessagesBeforeAPI, getMessagesAfterAPI, getConversationImagesAPI } from '../api/endpoints.js';
+import { getMessagesAPI, getConversationMembersAPI, markAsReadAPI, removeMemberAPI, leaveConversationAPI, addMemberToConversationAPI, searchUserAPI, uploadFileAPI, getPinnedMessageAPI, pinnedMessageAPI, unpinMessageAPI, toggleReactionAPI, searchMessageAPI, getMessagesContext, getMessagesBeforeAPI, getMessagesAfterAPI, getConversationImagesAPI, changeAdminRoleAPI, disbandGroupAPI } from '../api/endpoints.js';
 
 import GroupProfileModal from './GroupProfileModal.jsx';
 
@@ -496,6 +496,35 @@ const ChatWindow = () => {
         }
     };
 
+    const handleTransferAdmin = async (targetUserID, username) => {
+        if (window.confirm(`Bạn có chắc chắn muốn chuyển quyền Trưởng nhóm cho ${username}?`)) {
+            try {
+                await changeAdminRoleAPI(activeConversation.id, targetUserID);
+                const res = await getConversationMembersAPI(activeConversation.id);
+                setConversationMember(res.member || []);
+                alert("Chuyển quyền Trưởng nhóm thành công!");
+            } catch (err) {
+                console.error("Lỗi khi chuyển quyền admin:", err);
+                alert(err.response?.data?.message || "Lỗi khi chuyển quyền Trưởng nhóm!");
+            }
+        }
+    };
+
+    const handleDisbandGroup = async () => {
+        if (window.confirm("CẢNH BÁO: Bạn có chắc chắn muốn GIẢI TÁN NHÓM? Tất cả tin nhắn và thông tin nhóm sẽ bị xóa vĩnh viễn!")) {
+            try {
+                await disbandGroupAPI(activeConversation.id);
+                const currentConvs = useChatStore.getState().conversations;
+                useChatStore.getState().setConversations(currentConvs.filter(c => c.id !== activeConversation.id));
+                useChatStore.getState().setActiveConversation(null);
+                alert("Đã giải tán nhóm thành công!");
+            } catch (err) {
+                console.error("Lỗi khi giải tán nhóm:", err);
+                alert(err.response?.data?.message || "Lỗi khi giải tán nhóm!");
+            }
+        }
+    };
+
     const handleSearchMessage = async (e) => {
         e.preventDefault();
         if (!searchQuery.trim() || !activeConversation) return;
@@ -556,8 +585,8 @@ const ChatWindow = () => {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-sky-50/80 backdrop-blur-md p-4 animate-fade-in">
             <div className="bg-white border border-sky-200/60 rounded-3xl w-full max-w-sm p-6 shadow-2xl relative">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                        <span>👥</span> Thành Viên Nhóm
+                    <h3 className="text-lg font-bold text-slate-900">
+                        Thành Viên Nhóm
                     </h3>
                     <button
                         onClick={() => {
@@ -576,9 +605,9 @@ const ChatWindow = () => {
                         {!showAddMemberModal ? (
                             <button
                                 onClick={() => setShowAddMemberModal(true)}
-                                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center justify-center shadow-md"
                             >
-                                <span>➕</span> Thêm thành viên mới
+                                Thêm thành viên mới
                             </button>
                         ) : (
                             <div className="bg-sky-50 p-3 rounded-2xl border border-sky-200 space-y-3 animate-fade-in">
@@ -668,13 +697,22 @@ const ChatWindow = () => {
                                     {m.role}
                                 </span>
                                 {isAdmin && String(m.id) !== String(user?.id) && (
-                                    <button
-                                        onClick={() => handleRemoveMember(m.id, m.username)}
-                                        className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition cursor-pointer font-bold"
-                                        title="Xóa khỏi nhóm"
-                                    >
-                                        🗑️
-                                    </button>
+                                    <div className="flex items-center gap-1.5">
+                                        <button
+                                            onClick={() => handleTransferAdmin(m.id, m.username)}
+                                            className="text-[11px] text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2 py-1 rounded-lg transition cursor-pointer font-bold"
+                                            title="Chuyển quyền Trưởng nhóm"
+                                        >
+                                            Chuyển Trưởng nhóm
+                                        </button>
+                                        <button
+                                            onClick={() => handleRemoveMember(m.id, m.username)}
+                                            className="text-[11px] text-red-600 bg-red-50 hover:bg-red-100 border border-red-200/80 px-2 py-1 rounded-lg transition cursor-pointer font-bold"
+                                            title="Xóa khỏi nhóm"
+                                        >
+                                            Xóa
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -1251,9 +1289,17 @@ const ChatWindow = () => {
                         )}
                     </div>
 
-                    {/* Section 4: Leave Group (Bottom Action) */}
+                    {/* Section 4: Leave / Disband Group (Bottom Action) */}
                     {!isDirect && (
-                        <div className="p-4 mt-auto">
+                        <div className="p-4 mt-auto space-y-2">
+                            {isAdmin && (
+                                <button
+                                    onClick={handleDisbandGroup}
+                                    className="w-full py-2.5 px-4 bg-red-100 hover:bg-red-200 text-red-700 font-bold rounded-2xl text-xs transition cursor-pointer text-center flex items-center justify-center shadow-sm"
+                                >
+                                    Giải tán nhóm
+                                </button>
+                            )}
                             <button
                                 onClick={handleLeaveConversation}
                                 className="w-full py-2.5 px-4 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-2xl text-xs transition cursor-pointer text-center"

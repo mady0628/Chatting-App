@@ -36,11 +36,27 @@ export const sign_up = async (req, res) => {
 
 }
 
+const generateTokens = (user) => {
+    const accessToken = jwt.sign(
+        { id: user.id, email: user.email, username: user.username, system_role: user.system_role || 'user' },
+        process.env.JWT_SECRET,
+        { expiresIn: '15m' }
+    );
+
+    const refreshToken = jwt.sign(
+        { id: user.id },
+        process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+
+    return { accessToken, refreshToken };
+};
+
 export const sign_in = async (req, res) => {
     try {
         if (!process.env.JWT_SECRET) {
             return res.status(400).json({
-                message: "JWT_PASS not definded",
+                message: "JWT_SECRET not defined",
             })
         }
         const { email, password } = req.body;
@@ -60,6 +76,12 @@ export const sign_in = async (req, res) => {
 
         const user = userResult.rows[0];
 
+        if (user.is_banned) {
+            return res.status(403).json({
+                message: "Tài khoản của bạn đã bị khóa bởi Quản trị viên!",
+            });
+        }
+
         const passwordMatch = bcrypt.compareSync(password, user.password_hash);
         if (!passwordMatch) {
             return res.status(400).json({
@@ -67,18 +89,22 @@ export const sign_in = async (req, res) => {
             })
         }
 
-        const token = jwt.sign({
-            id: user.id,
-            email: user.email,
-            username: user.username,
-        }, process.env.JWT_SECRET, { expiresIn: '1d' }
-        );
+        const { accessToken, refreshToken } = generateTokens(user);
+
+        // Send refreshToken in HttpOnly Cookie
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
 
         const { password_hash, ...userSafe } = user;
 
         return res.status(200).json({
             message: "Login successfully",
-            token,
+            token: accessToken,
+            accessToken,
             user: userSafe,
         })
     } catch (err) {
@@ -88,5 +114,57 @@ export const sign_in = async (req, res) => {
             error: err.message || err,
         })
     }
-
 }
+
+export const refresh_token = async (req, res) => {
+    try {
+        const refreshToken = req.cookies?.refreshToken;
+        if (!refreshToken) {
+            return res.status(401).json({ message: "No refresh token provided" });
+        }
+
+        const decoded = jwt.verify(
+            refreshToken,
+            process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET
+        );
+
+        const userResult = await pool.query('SELECT id, username, email, avatar_url, status_message, system_role, is_banned FROM users WHERE id = $1', [decoded.id]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        const user = userResult.rows[0];
+        if (user.is_banned) {
+            return res.status(403).json({ message: "Tài khoản của bạn đã bị khóa!" });
+        }
+
+        const newAccessToken = jwt.sign(
+            { id: user.id, email: user.email, username: user.username, system_role: user.system_role || 'user' },
+            process.env.JWT_SECRET,
+            { expiresIn: '15m' }
+        );
+
+        return res.status(200).json({
+            token: newAccessToken,
+            accessToken: newAccessToken,
+            user
+        });
+    } catch (err) {
+        console.error("Refresh token error:", err.message);
+        return res.status(403).json({ message: "Invalid or expired refresh token" });
+    }
+};
+
+export const logout = async (req, res) => {
+    try {
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax'
+        });
+        return res.status(200).json({ message: "Logged out successfully" });
+    } catch (err) {
+        console.error("Logout error:", err);
+        return res.status(500).json({ message: "Logout error" });
+    }
+};

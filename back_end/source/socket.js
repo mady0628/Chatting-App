@@ -3,17 +3,35 @@ import jwt from 'jsonwebtoken';
 import pool from './db/pool.js'
 
 const onlineUser = new Map();
+let ioInstance = null;
+
+export const disconnectBannedUser = (userID) => {
+    const strUserID = String(userID);
+    const socketID = onlineUser.get(strUserID);
+    if (socketID && ioInstance) {
+        ioInstance.to(socketID).emit('account_banned', {
+            message: "Tài khoản của bạn đã bị khóa bởi Quản trị viên!"
+        });
+        const targetSocket = ioInstance.sockets.sockets.get(socketID);
+        if (targetSocket) {
+            targetSocket.disconnect(true);
+        }
+        onlineUser.delete(strUserID);
+        ioInstance.emit('user_offline', strUserID);
+    }
+};
 
 export const initSocket = (server) => {
     const io = new Server(server, {
         cors: {
-            origin: "http://localhost:5173",
+            origin: process.env.CLIENT_URL || "http://localhost:5173",
             methods: ["GET", "POST"]
         }
     });
+    ioInstance = io;
 
     //middleware
-    io.use((socket, next) => {
+    io.use(async (socket, next) => {
         try {
             const token = socket.handshake.auth.token;
             if (!token || !token.startsWith("Bearer ")) {
@@ -23,7 +41,12 @@ export const initSocket = (server) => {
             const rightToken = token.split(" ")[1];
             const decode = jwt.verify(rightToken, process.env.JWT_SECRET);
 
-            socket.user = decode;
+            const userCheck = await pool.query('SELECT is_banned, system_role FROM users WHERE id = $1', [decode.id]);
+            if (userCheck.rows.length === 0 || userCheck.rows[0].is_banned) {
+                return next(new Error("Authentication error: Account is banned or not found"));
+            }
+
+            socket.user = { ...decode, system_role: userCheck.rows[0].system_role };
             next();
         } catch (err) {
             console.error("Socket authentication failed:", err.message);

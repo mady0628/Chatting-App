@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { loginAPI, updateProfileAPI, changePasswordAPI } from '../api/endpoints.js';
+import { loginAPI, updateProfileAPI, changePasswordAPI, logoutAPI } from '../api/endpoints.js';
 
 const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || 'http://localhost:5000';
 
@@ -22,6 +22,16 @@ const useAuthStore = create((set) => ({
     error: null,
     loading: false,
 
+    setToken: (newToken) => {
+        if (newToken) {
+            localStorage.setItem('token', newToken);
+            set({ token: newToken, isAuthenticated: true });
+        } else {
+            localStorage.removeItem('token');
+            set({ token: null, isAuthenticated: false });
+        }
+    },
+
     setUser: (updatedUser) => {
         const normalizedUser = normalizeUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(normalizedUser));
@@ -33,11 +43,12 @@ const useAuthStore = create((set) => ({
         try {
             const data = await loginAPI(email, password);
             const normalizedUser = normalizeUser(data.user);
-            localStorage.setItem('token', data.token);
+            const authToken = data.token || data.accessToken;
+            localStorage.setItem('token', authToken);
             localStorage.setItem('user', JSON.stringify(normalizedUser));
             set({
                 user: normalizedUser,
-                token: data.token,
+                token: authToken,
                 isAuthenticated: true,
                 loading: false,
             });
@@ -85,14 +96,20 @@ const useAuthStore = create((set) => ({
         }
     },
 
-    logout: () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        set({
-            user: null,
-            token: null,
-            isAuthenticated: false,
-        });
+    logout: async () => {
+        try {
+            await logoutAPI();
+        } catch (err) {
+            console.error("Logout API call error:", err);
+        } finally {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            set({
+                user: null,
+                token: null,
+                isAuthenticated: false,
+            });
+        }
     }
 }));
 

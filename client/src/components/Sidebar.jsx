@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import useAuthStore from '../store/authStore.js';
 import useChatStore from '../store/chatStore.js';
@@ -30,6 +31,7 @@ const getPreviewText = (conv, currentUser) => {
 };
 
 const Sidebar = ({ logout }) => {
+    const navigate = useNavigate();
     const { user } = useAuthStore();
     const { emitCreateConversation, joinConversation, emitSendFriendRequest } = useSocket();
     const { conversations, setConversations, activeConversation, setActiveConversation, onlineUsers } = useChatStore();
@@ -345,13 +347,24 @@ const Sidebar = ({ logout }) => {
                         </span>
                     </div>
                 </button>
-                <button
-                    onClick={logout}
-                    className="text-slate-500 hover:text-rose-400 transition text-xs font-semibold cursor-pointer py-1.5 px-3 rounded-xl hover:bg-sky-100 shrink-0"
-                    title="Đăng xuất tài khoản"
-                >
-                    Đăng xuất
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                    {user?.system_role === 'admin' && (
+                        <button
+                            onClick={() => navigate('/admin')}
+                            className="text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold py-1.5 px-3 rounded-xl transition cursor-pointer"
+                            title="Trang quản trị hệ thống"
+                        >
+                            Quản trị
+                        </button>
+                    )}
+                    <button
+                        onClick={logout}
+                        className="text-slate-500 hover:text-rose-400 transition text-xs font-semibold cursor-pointer py-1.5 px-3 rounded-xl hover:bg-sky-100"
+                        title="Đăng xuất tài khoản"
+                    >
+                        Đăng xuất
+                    </button>
+                </div>
             </div>
 
             <div className="p-3.5 flex gap-2 border-b border-sky-100/60">

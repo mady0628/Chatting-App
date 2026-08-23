@@ -727,7 +727,7 @@ export const searchMessage = async (req, res) => {
     try {
         const userID = req.user.id;
         const { conversationID } = req.params;
-        const { content } = req.query;
+        const { content, limit = 20, offset = 0 } = req.query;
 
         if (!content) {
             return res.status(400).json({
@@ -761,7 +761,8 @@ export const searchMessage = async (req, res) => {
                 AND m.content ILIKE $2
                 AND m.deleted_at IS NULL
             ORDER BY m.created_at DESC
-        `, [conversationID, `%${content}%`]);
+            LIMIT $3 OFFSET $4
+        `, [conversationID, `%${content}%`, limit, offset]);
         return res.status(200).json({
             success: true,
             messages: result.rows
@@ -1233,6 +1234,9 @@ export const getListFriend = async (req, res) => {
     try {
         const userID = req.user.id;
         const sortOrder = req.query.sortOrder || 'ASC';
+        const limit = req.query.limit || 50;
+        const offset = req.query.offset || 0;
+
         if (sortOrder.toUpperCase() != 'ASC' && sortOrder.toUpperCase() != 'DESC') {
             return res.status(400).json({
                 message: "Invalid sort order"
@@ -1253,7 +1257,8 @@ export const getListFriend = async (req, res) => {
                 OR (f.user2_id = $1 AND u.id != $1)
             )
             ORDER BY LOWER(u.username) ASC
-        `, [userID]);
+            LIMIT $2 OFFSET $3
+        `, [userID, limit, offset]);
         } else {
             lstFriend = await pool.query(`
             SELECT 
@@ -1268,7 +1273,8 @@ export const getListFriend = async (req, res) => {
                 OR (f.user2_id = $1 AND u.id != $1)
             )
             ORDER BY LOWER(u.username) DESC
-        `, [userID]);
+            LIMIT $2 OFFSET $3
+        `, [userID, limit, offset]);
         }
         return res.status(200).json({
             success: true,
@@ -1285,6 +1291,9 @@ export const getListFriendRequest = async (req, res) => {
     try {
         const userID = req.user.id;
         const sortOrder = req.query.sortOrder || 'ASC';
+        const limit = req.query.limit || 50;
+        const offset = req.query.offset || 0;
+
         let lstFriendRequest;
         if (sortOrder.toUpperCase() === 'ASC') {
             lstFriendRequest = await pool.query(`
@@ -1300,7 +1309,8 @@ export const getListFriendRequest = async (req, res) => {
                     ON (fr.sender_id = u.id)
                 WHERE fr.receive_id = $1
                 ORDER BY fr.created_at ASC
-            `, [userID])
+                LIMIT $2 OFFSET $3
+            `, [userID, limit, offset])
         } else {
             lstFriendRequest = await pool.query(`
                 SELECT 
@@ -1315,7 +1325,8 @@ export const getListFriendRequest = async (req, res) => {
                     ON (fr.sender_id = u.id)
                 WHERE fr.receive_id = $1
                 ORDER BY fr.created_at DESC
-            `, [userID])
+                LIMIT $2 OFFSET $3
+            `, [userID, limit, offset])
         }
         return res.status(200).json({
             success: true,
@@ -1328,68 +1339,100 @@ export const getListFriendRequest = async (req, res) => {
     }
 }
 
-export const changeAdmiRole = async (req, res) => {
+export const changeAdminRole = async (req, res) => {
     try {
         const userID = req.user.id;
         const { conversationID } = req.params;
-        const { newAdmin } = req.body;
+        const newAdminID = req.body.newAdminID || req.body.newAdmin;
+
+        if (!newAdminID) {
+            return res.status(400).json({
+                message: "Please specify new admin ID"
+            });
+        }
+
         const checkAdmin = await pool.query(`
             SELECT role
             FROM conversation_members
             WHERE conversation_id = $1 AND user_id = $2 
         `, [conversationID, userID]);
+
         if (checkAdmin.rows.length === 0) {
             return res.status(401).json({
-                message: "You are not member of this conversation"
-            })
+                message: "You are not a member of this conversation"
+            });
         }
+
+        if (checkAdmin.rows[0].role !== 'admin') {
+            return res.status(403).json({
+                message: "You are not admin in this conversation"
+            });
+        }
+
         const checkNewAdmin = await pool.query(`
             SELECT 1
             FROM conversation_members
             WHERE conversation_id = $1 AND user_id = $2 
-        `, [conversationID, newAdmin]);
+        `, [conversationID, newAdminID]);
+
         if (checkNewAdmin.rows.length === 0) {
-            return res.status(401).json({
-                message: "New admin is not member of this conversation"
-            })
-        }
-        if (checkAdmin.rows[0].role !== 'admin') {
-            return res.status(403).json({
-                message: "You are not admin in this conversation"
-            })
-        }
-        if (!newAdmin) {
             return res.status(400).json({
-                message: "Please fill full information"
-            })
+                message: "New admin is not a member of this conversation"
+            });
         }
-        const changeRoleOfAdmin = await pool.query(`
+
+        await pool.query(`
             UPDATE conversation_members
             SET role = 'member'
             WHERE conversation_id = $1 AND user_id = $2
         `, [conversationID, userID]);
-        const changeRoleOfNewAdmin = await pool.query(`
+
+        await pool.query(`
             UPDATE conversation_members
             SET role = 'admin'
             WHERE conversation_id = $1 AND user_id = $2
-        `, [conversationID, newAdmin]);
+        `, [conversationID, newAdminID]);
+
         return res.status(200).json({
             success: true,
-            message: "update admin role success"
-        })
+            message: "Updated admin role successfully"
+        });
     } catch (err) {
         return res.status(500).json({
             error: err.message,
-        })
+        });
     }
-}
+};
 
 export const disbandGroup = async (req, res) => {
     try {
         const userID = req.user.id;
         const { conversationID } = req.params;
 
-    } catch (err) {
+        const checkAdmin = await pool.query(`
+            SELECT role
+            FROM conversation_members
+            WHERE conversation_id = $1 AND user_id = $2
+        `, [conversationID, userID]);
 
+        if (checkAdmin.rows.length === 0 || checkAdmin.rows[0].role !== 'admin') {
+            return res.status(403).json({
+                message: "Only admin can disband group"
+            });
+        }
+
+        await pool.query(`
+            DELETE FROM conversations
+            WHERE id = $1 AND type = 'group'
+        `, [conversationID]);
+
+        return res.status(200).json({
+            success: true,
+            message: "Group disbanded successfully"
+        });
+    } catch (err) {
+        return res.status(500).json({
+            error: err.message,
+        });
     }
-}
+};
