@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
+import { MoreVertical, Crown, UserMinus } from 'lucide-react';
 import useAuthStore from '../store/authStore.js';
 import useChatStore from '../store/chatStore.js';
 import { useSocket } from '../hooks/useSocket.js';
@@ -33,7 +34,7 @@ const groupReactions = (reactions = [], currentUserID) => {
 const ChatWindow = () => {
     const { user } = useAuthStore();
     const { activeConversation, messages, setMessages, prependMessages, appendMessages, typingUsers, markConversationAsRead, conversationMembers, setConversationMember, replyingMessage, setReplyingMessage, onlineUsers, pinnedList, setPinnedList } = useChatStore();
-    const { sendMessage, emitTypingStart, emitTypingStop, emitMarkAsRead, emitEditMessage, emitDeleteMessage, emitRemoveMember, emitLeaveConversation, emitAddMember, emitUpdatePinnedList, emitUpdateReactions } = useSocket();
+    const { sendMessage, emitTypingStart, emitTypingStop, emitMarkAsRead, emitEditMessage, emitDeleteMessage, emitRemoveMember, emitLeaveConversation, emitAddMember, emitUpdatePinnedList, emitUpdateReactions, emitTransferAdmin } = useSocket();
 
     const [text, setText] = useState('');
     const messageEndRef = useRef(null);
@@ -61,6 +62,23 @@ const ChatWindow = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResult, setSearchResult] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [activeMemberMenuId, setActiveMemberMenuId] = useState(null);
+
+    useEffect(() => {
+        if (!showMembersModal) {
+            setActiveMemberMenuId(null);
+            return;
+        }
+        const handleClickOutside = () => {
+            setActiveMemberMenuId(null);
+        };
+        if (activeMemberMenuId) {
+            document.addEventListener('click', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, [showMembersModal, activeMemberMenuId]);
 
     useEffect(() => {
         if (reactionModalMessage) {
@@ -500,6 +518,7 @@ const ChatWindow = () => {
         if (window.confirm(`Bạn có chắc chắn muốn chuyển quyền Trưởng nhóm cho ${username}?`)) {
             try {
                 await changeAdminRoleAPI(activeConversation.id, targetUserID);
+                emitTransferAdmin(activeConversation.id, targetUserID);
                 const res = await getConversationMembersAPI(activeConversation.id);
                 setConversationMember(res.member || []);
                 alert("Chuyển quyền Trưởng nhóm thành công!");
@@ -592,6 +611,7 @@ const ChatWindow = () => {
                         onClick={() => {
                             setShowMembersModal(false);
                             setShowAddMemberModal(false);
+                            setActiveMemberMenuId(null);
                         }}
                         className="text-slate-500 hover:text-slate-900 w-8 h-8 rounded-full flex items-center justify-center hover:bg-sky-100 transition cursor-pointer font-bold"
                     >
@@ -676,42 +696,84 @@ const ChatWindow = () => {
                     </div>
                 )}
 
-                <div className="max-h-56 overflow-y-auto space-y-2.5 mb-4 pr-1 divide-y divide-sky-100">
-                    {conversationMembers.map(m => (
-                        <div key={m.id} className="flex items-center justify-between pt-2.5 first:pt-0">
-                            <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs overflow-hidden shadow-sm">
+                <div className="max-h-64 overflow-y-auto space-y-2 mb-4 pr-1 divide-y divide-sky-100 min-h-[140px]">
+                    {conversationMembers.map((m, idx) => (
+                        <div key={m.id} className="flex items-center justify-between pt-2.5 first:pt-0 relative">
+                            <div className="flex items-center gap-3 min-w-0 pr-2">
+                                <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs overflow-hidden shadow-sm shrink-0">
                                     {m.avatar_url ? (
                                         <img src={m.avatar_url} alt={m.username} className="w-full h-full object-cover" />
                                     ) : (
                                         m.username?.charAt(0).toUpperCase()
                                     )}
                                 </div>
-                                <span className="text-sm text-slate-700 font-semibold">{m.username}</span>
+                                <div className="min-w-0">
+                                    <span className="text-sm text-slate-700 font-semibold truncate block">
+                                        {m.username}
+                                        {String(m.id) === String(user?.id) && (
+                                            <span className="text-[11px] text-blue-600 font-medium ml-1">(Bạn)</span>
+                                        )}
+                                    </span>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${m.role === 'admin'
                                     ? 'bg-amber-500/20 text-amber-600 border border-amber-500/30'
                                     : 'bg-sky-100 text-slate-500'
                                     }`}>
-                                    {m.role}
+                                    {m.role === 'admin' ? 'Trưởng nhóm' : 'Thành viên'}
                                 </span>
                                 {isAdmin && String(m.id) !== String(user?.id) && (
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="relative">
                                         <button
-                                            onClick={() => handleTransferAdmin(m.id, m.username)}
-                                            className="text-[11px] text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2 py-1 rounded-lg transition cursor-pointer font-bold"
-                                            title="Chuyển quyền Trưởng nhóm"
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMemberMenuId(activeMemberMenuId === m.id ? null : m.id);
+                                            }}
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+                                                activeMemberMenuId === m.id
+                                                    ? 'bg-blue-100 text-blue-600 shadow-xs'
+                                                    : 'text-slate-400 hover:text-slate-700 hover:bg-sky-100'
+                                            }`}
+                                            title="Tùy chọn thành viên"
                                         >
-                                            Chuyển Trưởng nhóm
+                                            <MoreVertical size={16} />
                                         </button>
-                                        <button
-                                            onClick={() => handleRemoveMember(m.id, m.username)}
-                                            className="text-[11px] text-red-600 bg-red-50 hover:bg-red-100 border border-red-200/80 px-2 py-1 rounded-lg transition cursor-pointer font-bold"
-                                            title="Xóa khỏi nhóm"
-                                        >
-                                            Xóa
-                                        </button>
+
+                                        {activeMemberMenuId === m.id && (
+                                            <div
+                                                onClick={(e) => e.stopPropagation()}
+                                                className={`absolute right-0 ${
+                                                    idx > 1 && idx >= conversationMembers.length - 2
+                                                        ? 'bottom-full mb-1.5'
+                                                        : 'top-full mt-1.5'
+                                                } w-48 bg-white rounded-2xl shadow-xl border border-sky-100 py-1.5 z-50 animate-fade-in flex flex-col`}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setActiveMemberMenuId(null);
+                                                        handleTransferAdmin(m.id, m.username);
+                                                    }}
+                                                    className="w-full px-3.5 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2.5 transition cursor-pointer"
+                                                >
+                                                    <Crown size={15} className="text-amber-500 shrink-0" />
+                                                    <span>Chuyển Trưởng nhóm</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setActiveMemberMenuId(null);
+                                                        handleRemoveMember(m.id, m.username);
+                                                    }}
+                                                    className="w-full px-3.5 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition cursor-pointer border-t border-sky-50"
+                                                >
+                                                    <UserMinus size={15} className="text-red-500 shrink-0" />
+                                                    <span>Xóa khỏi nhóm</span>
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -724,6 +786,7 @@ const ChatWindow = () => {
                         onClick={() => {
                             setShowMembersModal(false);
                             setShowAddMemberModal(false);
+                            setActiveMemberMenuId(null);
                         }}
                         className="px-5 py-2 bg-sky-100 hover:bg-sky-200 text-slate-900 rounded-2xl text-xs font-bold transition cursor-pointer"
                     >
@@ -784,7 +847,7 @@ const ChatWindow = () => {
                                 }`}
                             title="Tìm kiếm tin nhắn"
                         >
-                            🔍 Tìm kiếm
+                            Tìm kiếm
                         </button>
                         <button
                             onClick={() => setShowInfoPanel(!showInfoPanel)}
@@ -892,11 +955,26 @@ const ChatWindow = () => {
                     className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4"
                 >
                     {loadingMore && (
-                        <div className="flex items-center justify-center py-2 text-xs font-semibold text-sky-600 animate-pulse gap-2">
-                            <span>⏳</span> Đang tải tin nhắn cũ hơn...
+                        <div className="flex items-center justify-center py-2 text-xs font-semibold text-sky-600 animate-pulse">
+                            Đang tải tin nhắn cũ hơn...
                         </div>
                     )}
                     {messages.map((msg) => {
+                        if (msg.type === 'system') {
+                            return (
+                                <div key={msg.id} id={`msg-${msg.id}`} className="flex justify-center my-2 select-none animate-fade-in">
+                                    <div className="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-slate-200/80 text-slate-700 border border-slate-300/60 shadow-2xs text-center max-w-[90%]">
+                                        <span className="text-[11px] font-semibold text-slate-700">
+                                            {msg.content}
+                                        </span>
+                                        <span className="text-[10px] text-slate-500 ml-1 shrink-0">
+                                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        }
+
                         const isOwnMessage = String(msg.sender_id) === String(user?.id);
                         const isDeleted = !!msg.deleted_at;
                         const isEdited = !!msg.edited_at && !isDeleted;
@@ -929,14 +1007,22 @@ const ChatWindow = () => {
                                         )}
 
                                         {/* Main Message Bubble (Tin Nhắn Chính Ở Dưới) */}
-                                        <div className={`relative z-10 transition ${msg.type === 'image' && !isDeleted
-                                            ? 'p-0 bg-transparent shadow-none'
-                                            : `rounded-3xl px-4 py-3 shadow-md ${isOwnMessage
-                                                ? 'bg-blue-600 text-white rounded-br-xs shadow-blue-100'
-                                                : 'bg-sky-100 text-slate-900 rounded-bl-xs border border-sky-200/60'
-                                            }`
-                                            }`}>
-                                            {!isOwnMessage && !isDirect && msg.type !== 'image' && (
+                                        <div className={`relative z-10 transition ${
+                                            isDeleted
+                                                ? `rounded-3xl px-4 py-2.5 border border-dashed shadow-xs ${
+                                                    isOwnMessage
+                                                        ? 'bg-blue-50 text-blue-900 border-blue-300'
+                                                        : 'bg-slate-100 text-slate-800 border-slate-300'
+                                                }`
+                                                : msg.type === 'image'
+                                                ? 'p-0 bg-transparent shadow-none'
+                                                : `rounded-3xl px-4 py-3 shadow-md ${
+                                                    isOwnMessage
+                                                        ? 'bg-blue-600 text-white rounded-br-xs shadow-blue-100'
+                                                        : 'bg-sky-100 text-slate-900 rounded-bl-xs border border-sky-200/60'
+                                                }`
+                                        }`}>
+                                            {!isOwnMessage && !isDirect && msg.type !== 'image' && !isDeleted && (
                                                 <div className="text-[11px] font-bold text-blue-700 mb-1">
                                                     {msg.sender_name}
                                                 </div>
@@ -944,7 +1030,11 @@ const ChatWindow = () => {
 
                                             {/* Content */}
                                             {isDeleted ? (
-                                                <p className="text-sm italic text-slate-500 opacity-70">Tin nhắn đã được thu hồi</p>
+                                                <div className="py-0.5 select-none">
+                                                    <p className={`text-xs italic font-semibold ${isOwnMessage ? 'text-blue-800' : 'text-slate-700'}`}>
+                                                        Tin nhắn đã được thu hồi
+                                                    </p>
+                                                </div>
                                             ) : msg.type === 'image' ? (
                                                 <div className="relative group/img overflow-hidden rounded-3xl shadow-md border border-sky-200/50">
                                                     {!isOwnMessage && !isDirect && (
@@ -977,7 +1067,11 @@ const ChatWindow = () => {
                                                     {isEdited && (
                                                         <span className="text-[9px] italic opacity-60 text-slate-700">(đã sửa)</span>
                                                     )}
-                                                    <span className="block text-[10px] opacity-60 text-right font-medium">
+                                                    <span className={`block text-[10px] text-right font-medium ${
+                                                        isDeleted
+                                                            ? (isOwnMessage ? 'text-blue-600/70' : 'text-slate-400')
+                                                            : (isOwnMessage ? 'text-white/75' : 'text-slate-500')
+                                                    }`}>
                                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>

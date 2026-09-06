@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS messages(
     sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     reply_to_id UUID REFERENCES messages(id) ON DELETE SET NULL,
     content TEXT,
-    type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK (type IN ('text', 'image', 'file')),
+    type VARCHAR(20) NOT NULL DEFAULT 'text' CHECK (type IN ('text', 'image', 'file', 'system')),
     file_url TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     edited_at TIMESTAMP,

@@ -21,6 +21,54 @@ export const disconnectBannedUser = (userID) => {
     }
 };
 
+export const sendSystemMessage = async (conversationID, content, senderID) => {
+    try {
+        const result = await pool.query(`
+            INSERT INTO messages(conversation_id, sender_id, content, type)
+            VALUES ($1, $2, $3, 'system')
+            RETURNING id, conversation_id, sender_id, content, type, reply_to_id, created_at
+        `, [conversationID, senderID, content]);
+
+        const newMessage = result.rows[0];
+
+        const senderResult = await pool.query(`
+            SELECT username, avatar_url FROM users
+            WHERE id = $1
+        `, [senderID]);
+
+        const responseMessage = {
+            ...newMessage,
+            sender_name: senderResult.rows[0]?.username || 'Hệ thống',
+            sender_avatar: senderResult.rows[0]?.avatar_url || null,
+            reactions: []
+        };
+
+        await pool.query(`
+            UPDATE conversations
+            SET updated_at = NOW()
+            WHERE id = $1
+        `, [conversationID]);
+
+        if (ioInstance) {
+            ioInstance.to(`conversation:${conversationID}`).emit('receive_message', responseMessage);
+
+            const membersResult = await pool.query(`
+                SELECT user_id FROM conversation_members WHERE conversation_id = $1
+            `, [conversationID]);
+
+            membersResult.rows.forEach(m => {
+                const memberSocketID = onlineUser.get(String(m.user_id));
+                if (memberSocketID) {
+                    ioInstance.to(memberSocketID).emit('receive_message', responseMessage);
+                }
+            });
+        }
+        return responseMessage;
+    } catch (err) {
+        console.error("Error in sendSystemMessage:", err.message);
+    }
+};
+
 export const initSocket = (server) => {
     const io = new Server(server, {
         cors: {
@@ -347,6 +395,16 @@ export const initSocket = (server) => {
                 console.error('error add_member socket: ', err.message)
             }
         })
+
+        //transfer admin
+        socket.on('transfer_admin', (data) => {
+            try {
+                const { conversationID, targetUserID } = data;
+                io.to(`conversation:${conversationID}`).emit('admin_role_changed', { conversationID, targetUserID });
+            } catch (err) {
+                console.error('error transfer_admin socket: ', err.message);
+            }
+        });
 
         //update group profile
         socket.on('update_group_profile', (data) => {

@@ -85,7 +85,7 @@ export const useSocket = () => {
 
             socket.on('receive_message', (message) => {
                 const currentUser = useAuthStore.getState().user;
-                if (String(message.sender_id) !== String(currentUser?.id)) {
+                if (message.type !== 'system' && String(message.sender_id) !== String(currentUser?.id)) {
                     playNotificationSound();
                 }
                 addMessage(message);
@@ -163,6 +163,15 @@ export const useSocket = () => {
 
             socket.on('group_profile_updated', ({ conversationID, group_name, group_avatar }) => {
                 useChatStore.getState().updateGroupInfo(conversationID, { group_name, group_avatar });
+            });
+
+            socket.on('admin_role_changed', ({ conversationID }) => {
+                const { activeConversation } = useChatStore.getState();
+                if (String(activeConversation?.id) === String(conversationID)) {
+                    getConversationMembersAPI(conversationID).then(res => {
+                        useChatStore.getState().setConversationMember(res.member || []);
+                    }).catch(err => console.error("Lỗi khi cập nhật danh sách thành viên:", err));
+                }
             });
 
             socket.on('pinned_list_updated', ({ conversationID, pinnedList }) => {
@@ -295,6 +304,12 @@ export const useSocket = () => {
         }
     }
 
+    const emitTransferAdmin = (conversationID, targetUserID) => {
+        if (socket) {
+            socket.emit('transfer_admin', { conversationID, targetUserID });
+        }
+    }
+
     return {
         socket,
         joinConversation,
@@ -312,6 +327,7 @@ export const useSocket = () => {
         emitUpdatePinnedList,
         emitUpdateReactions,
         emitSendFriendRequest,
-        emitAcceptFriendRequest
+        emitAcceptFriendRequest,
+        emitTransferAdmin
     };
 };

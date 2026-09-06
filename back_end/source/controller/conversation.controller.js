@@ -1,4 +1,5 @@
 import pool from "../db/pool.js";
+import { sendSystemMessage } from "../socket.js";
 
 export const createConversation = async (req, res) => {
     try {
@@ -425,6 +426,12 @@ export const removeMember = async (req, res) => {
             })
         }
 
+        const adminRes = await pool.query(`SELECT username FROM users WHERE id = $1`, [userID]);
+        const targetRes = await pool.query(`SELECT username FROM users WHERE id = $1`, [targetUserID]);
+        const adminName = adminRes.rows[0]?.username || 'Trưởng nhóm';
+        const targetName = targetRes.rows[0]?.username || 'Thành viên';
+        await sendSystemMessage(conversationID, `${adminName} đã xóa ${targetName} khỏi nhóm.`, userID);
+
         return res.status(200).json({
             success: true,
             message: "Remove user successfully",
@@ -474,6 +481,11 @@ export const leaveGroup = async (req, res) => {
             WHERE conversation_id = $1 AND user_id = $2
             RETURNING conversation_id, user_id
         `, [conversationID, userID]);
+
+        const userRes = await pool.query(`SELECT username FROM users WHERE id = $1`, [userID]);
+        const userName = userRes.rows[0]?.username || 'Thành viên';
+        await sendSystemMessage(conversationID, `${userName} đã rời khỏi nhóm.`, userID);
+
         res.status(200).json({
             success: true,
             message: "Leave conversation successfully",
@@ -489,6 +501,7 @@ export const leaveGroup = async (req, res) => {
 
 export const addMemberToConversation = async (req, res) => {
     try {
+        const userID = req.user.id;
         const { conversationID } = req.params;
         const { targetIDs } = req.body;
         for (const targetID of targetIDs) {
@@ -498,6 +511,17 @@ export const addMemberToConversation = async (req, res) => {
                 ON CONFLICT (conversation_id, user_id) DO NOTHING
             `, [conversationID, targetID]);
         }
+
+        if (Array.isArray(targetIDs) && targetIDs.length > 0) {
+            const adminRes = await pool.query(`SELECT username FROM users WHERE id = $1`, [userID]);
+            const targetUsersRes = await pool.query(`SELECT username FROM users WHERE id = ANY($1)`, [targetIDs]);
+            const adminName = adminRes.rows[0]?.username || 'Trưởng nhóm';
+            const targetNames = targetUsersRes.rows.map(u => u.username).join(', ');
+            if (targetNames) {
+                await sendSystemMessage(conversationID, `${adminName} đã thêm ${targetNames} vào nhóm.`, userID);
+            }
+        }
+
         res.status(200).json({
             success: true,
             message: "Add member successfully",
@@ -1392,6 +1416,12 @@ export const changeAdminRole = async (req, res) => {
             SET role = 'admin'
             WHERE conversation_id = $1 AND user_id = $2
         `, [conversationID, newAdminID]);
+
+        const adminRes = await pool.query(`SELECT username FROM users WHERE id = $1`, [userID]);
+        const targetRes = await pool.query(`SELECT username FROM users WHERE id = $1`, [newAdminID]);
+        const adminName = adminRes.rows[0]?.username || 'Trưởng nhóm';
+        const targetName = targetRes.rows[0]?.username || 'Thành viên';
+        await sendSystemMessage(conversationID, `${adminName} đã chuyển quyền Trưởng nhóm cho ${targetName}.`, userID);
 
         return res.status(200).json({
             success: true,

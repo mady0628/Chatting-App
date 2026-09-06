@@ -55,6 +55,8 @@ const useChatStore = create((set) => ({
 
         const displayLastMessage = message.type === 'image'
             ? `${senderPrefix} đã gửi 1 ảnh`
+            : message.type === 'system'
+            ? message.content
             : `${senderPrefix}: ${message.content}`;
 
         if (targetConvIndex !== -1) {

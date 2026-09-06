@@ -11,6 +11,7 @@ import FriendsModal from './FriendsModal.jsx';
 
 const getPreviewText = (conv, currentUser) => {
     if (!conv || !conv.last_message) return "Chưa có tin nhắn nào";
+    if (conv.last_message_type === 'system') return conv.last_message;
 
     const isImageMsg = conv.last_message_type === 'image' || 
                        conv.last_message.startsWith('http://') || 
