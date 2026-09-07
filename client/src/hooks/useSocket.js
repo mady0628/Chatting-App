@@ -5,7 +5,29 @@ import useChatStore from '../store/chatStore';
 import { getConversationMembersAPI, markAsReadAPI } from '../api/endpoints';
 import useFriendStore from '../store/friendStore';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
+const trimTrailingSlash = (value) => value?.replace(/\/$/, "");
+
+const getSocketUrl = () => {
+    if (import.meta.env.VITE_SOCKET_URL) {
+        return trimTrailingSlash(import.meta.env.VITE_SOCKET_URL);
+    }
+
+    if (import.meta.env.VITE_API_URL) {
+        try {
+            const apiUrl = new URL(import.meta.env.VITE_API_URL, window.location.origin);
+            apiUrl.pathname = apiUrl.pathname.replace(/\/api\/?$/, '') || '/';
+            apiUrl.search = '';
+            apiUrl.hash = '';
+            return trimTrailingSlash(apiUrl.toString());
+        } catch (err) {
+            console.error('Invalid VITE_API_URL for socket connection:', err);
+        }
+    }
+
+    return window.location.origin;
+};
+
+const SOCKET_URL = getSocketUrl();
 let socket = null;
 
 const playNotificationSound = () => {
@@ -54,15 +76,34 @@ export const useSocket = () => {
             return;
         }
 
-        if (!socket) {
+        if (socket) {
+            if (socket.auth?.token !== `Bearer ${token}`) {
+                socket.auth = { token: `Bearer ${token}` };
+                if (socket.connected) {
+                    socket.disconnect().connect();
+                } else {
+                    socket.connect();
+                }
+            }
+        } else {
             socket = io(SOCKET_URL, {
                 auth: {
                     token: `Bearer ${token}`
-                }
+                },
+                transports: ['websocket', 'polling']
             });
 
             socket.on('connect', () => {
                 console.log('Socket connected successfully');
+            });
+
+            socket.on('connect_error', (err) => {
+                console.error('Socket connection error:', err.message);
+            });
+
+            socket.on('message_error', (msg) => {
+                console.error('Socket message error:', msg);
+                alert(typeof msg === 'string' ? msg : 'Lỗi khi gửi tin nhắn');
             });
 
             socket.on('account_banned', (data) => {
@@ -221,9 +262,13 @@ export const useSocket = () => {
     };
 
     const sendMessage = (conversationID, content, type = 'text', replyToID = null) => {
-        if (socket) {
-            socket.emit('send_message', { conversationID, content, type, replyToID });
+        if (!socket || !socket.connected) {
+            console.warn("Socket is not connected. Attempting reconnection...");
+            if (socket) socket.connect();
+            alert("Mất kết nối tới máy chủ chat. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau!");
+            return;
         }
+        socket.emit('send_message', { conversationID, content, type, replyToID });
     };
 
     const emitTypingStart = (conversationID) => {

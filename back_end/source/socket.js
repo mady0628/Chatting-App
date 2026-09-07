@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import pool from './db/pool.js'
+import { corsOrigin } from './config/cors.js';
 
 const onlineUser = new Map();
 let ioInstance = null;
@@ -72,8 +73,9 @@ export const sendSystemMessage = async (conversationID, content, senderID) => {
 export const initSocket = (server) => {
     const io = new Server(server, {
         cors: {
-            origin: process.env.CLIENT_URL || "http://localhost:5173",
-            methods: ["GET", "POST"]
+            origin: corsOrigin,
+            methods: ["GET", "POST"],
+            credentials: true
         }
     });
     ioInstance = io;
